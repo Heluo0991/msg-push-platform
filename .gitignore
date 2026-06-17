@@ -1,0 +1,18 @@
+# 编译产物
+*.o
+*.out
+mpserver
+
+# 数据库
+*.db
+
+# 前端依赖
+node_modules/
+
+# IDE
+*.code-workspace
+
+# 个人开发计划
+PLAN.md
+tasks/
+CLAUDE.md
