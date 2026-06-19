@@ -61,14 +61,18 @@ debug: all
 # ============================================================
 # Day 1: 底层组件
 test_queue:
-	$(CXX) $(CXXFLAGS) test/test_queue.cpp -o test/test_queue $(LDFLAGS) && ./test/test_queue
+	$(CXX) $(CXXFLAGS) -I . test/test_lockfree_queue.cpp -o test/test_queue $(LDFLAGS) && ./test/test_queue
 
 test_pool:
-	$(CXX) $(CXXFLAGS) test/test_pool.cpp -o test/test_pool $(LDFLAGS) && ./test/test_pool
+	$(CXX) $(CXXFLAGS) -I . test/test_object_pool.cpp -o test/test_pool && ./test/test_pool
 
 # Day 2: 协议
 test_protocol:
 	$(CXX) $(CXXFLAGS) -I src test/test_protocol.cpp -o test/test_protocol && ./test/test_protocol
+
+# Day 2: 线程池
+test_thread_pool:
+	$(CXX) $(CXXFLAGS) -I . test/test_thread_pool.cpp src/thread_pool.cpp -o test/test_thread_pool $(LDFLAGS) && ./test/test_thread_pool
 
 # Day 4: 数据库
 test_db:
@@ -76,7 +80,7 @@ test_db:
 	@rm -f test.db
 
 # 一键全跑（仅自动化测试，不含 nc 手动集成测试和 valgrind）
-test: test_queue test_pool test_protocol test_db
+test: test_queue test_pool test_protocol test_thread_pool test_db
 	@echo "=== 全部单元测试通过 ==="
 
 # ============================================================
@@ -84,7 +88,7 @@ test: test_queue test_pool test_protocol test_db
 # ============================================================
 clean:
 	rm -f $(OBJS) $(TARGET)
-	rm -f test/test_queue test/test_pool test/test_protocol test/test_db
+	rm -f test/test_queue test/test_pool test/test_protocol test/test_thread_pool test/test_db
 
 # ============================================================
 # 声明哪些 target 不是真实文件 (防止和同名文件冲突)
