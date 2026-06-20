@@ -7,9 +7,9 @@
 int main()
 {
     int fd= open("/dev/null",O_WRONLY);
-    FDGUARD g(fd);
+    FdGuard g(fd);
     assert(g.get()==fd);
-    FDGUARD g2 = std::move(g);//移动构造测试
+    FdGuard g2 = std::move(g);//移动构造测试
     assert(g.get()==-1);
     assert(g2.get()==fd);
     int r=g2.release();//释放所有权

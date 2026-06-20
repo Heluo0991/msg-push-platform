@@ -12,7 +12,7 @@ int main()
     {
         std::atomic<int> x{0};
         {
-            THREADPOOL pool(2);
+            ThreadPool pool(2);
             for (int i = 0; i < 100; i++)
                 pool.submit([&x]
                             { x.fetch_add(1); });
@@ -23,7 +23,7 @@ int main()
 
     // test2 parrall
     {
-        THREADPOOL pool(10);
+        ThreadPool pool(10);
         std::mutex mtx_;
         std::atomic<int> done_num = 0;
         std::set<std::thread::id> ids; // 非重有序集合
@@ -54,7 +54,7 @@ int main()
     {
         std::atomic<int> counter{0};
         {
-            THREADPOOL pool(4);
+            ThreadPool pool(4);
 
             for (int i = 0; i < 100; i++)
             {

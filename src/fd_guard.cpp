@@ -1,27 +1,27 @@
 #include"fd_guard.h"
 
-FDGUARD::FDGUARD(int fd):fd_(fd){}//
+FdGuard::FdGuard(int fd):fd_(fd){}//
 
-FDGUARD::operator int() const {
+FdGuard::operator int() const {
     return fd_;
 }
 
-FDGUARD::~FDGUARD(){
+FdGuard::~FdGuard(){
     if(fd_>=0)close(fd_);
 }
 
-FDGUARD::FDGUARD(FDGUARD&& other) noexcept{
+FdGuard::FdGuard(FdGuard&& other) noexcept{
     this->fd_=other.fd_;
     other.fd_=-1;//获得一个无效的fd文件标识符
 }
 
-int FDGUARD::release() noexcept{
+int FdGuard::release() noexcept{
     int temp=fd_;
     fd_=-1;
     return temp;//RVO
 }
 
-FDGUARD& FDGUARD::operator=(FDGUARD&& other)noexcept
+FdGuard& FdGuard::operator=(FdGuard&& other)noexcept
 {
     if(this!=&other){
         if(fd_>=0)close(fd_);//接管其他文件标识符前先释放自己管的文件，防止内存泄漏
@@ -32,7 +32,7 @@ FDGUARD& FDGUARD::operator=(FDGUARD&& other)noexcept
     return *this;//链式调用
 }
 
-int FDGUARD::get()const{
+int FdGuard::get()const{
     return fd_;
 }
 

@@ -6,7 +6,7 @@
 
 using json = nlohmann::json;
 
-void try_parse_line(const std::string &raw, MessageBody &out)
+inline void try_parse_line(const std::string &raw, MessageBody &out)//需要内联，在.h里写实现
 {
     auto js = json::parse(raw);
     std::string type = js["type"]; // 键值对

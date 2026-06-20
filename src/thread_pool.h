@@ -9,7 +9,7 @@
 #include<utility>
 #include<cstddef>
 
-class THREADPOOL{
+class ThreadPool{
 private:
     using Task=std::function<void()>;
     std::vector<std::thread> thread_pool_;
@@ -19,11 +19,11 @@ private:
     bool stop_;
 
 public:
-    explicit THREADPOOL(size_t n);
-    THREADPOOL() = delete;
-    THREADPOOL(const THREADPOOL&)=delete;
-    THREADPOOL& operator=(const THREADPOOL&)=delete;
-    ~THREADPOOL();
+    explicit ThreadPool(size_t n);
+    ThreadPool() = delete;
+    ThreadPool(const ThreadPool&)=delete;
+    ThreadPool& operator=(const ThreadPool&)=delete;
+    ~ThreadPool();
 
     template<typename F>
     void submit(F&& f)

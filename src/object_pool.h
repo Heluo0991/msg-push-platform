@@ -5,7 +5,7 @@
 
 
 template <typename T, size_t Poolsize>
-class OBJECTPOOL
+class ObjectPool
 {
 private:
     struct Slot
@@ -21,11 +21,11 @@ private:
     bool *used_;
 
 public:
-    explicit OBJECTPOOL()
+    explicit ObjectPool()
     {
         pool_ = operator new(sizeof(Slot) * Poolsize); // 裸内存分配，不调用Slot中T的构造函数的构造函数,减少内核消耗
         Slot *Slots = static_cast<Slot *>(pool_);      // 不能直接遍历void*的指针
-        for (int i = 0; i < Poolsize - 1; i++)
+        for (size_t i = 0; i < Poolsize - 1; i++)
         {
             Slots[i].next = &(Slots[i + 1]); // 链表连接
         }
@@ -33,7 +33,7 @@ public:
         free_node_ = Slots;
 
         used_ = new bool[Poolsize];
-        for (int i = 0; i < Poolsize; i++)
+        for (size_t i = 0; i < Poolsize; i++)
             used_[i] = false;
         // 标志内存池对应位置是否被使用,初始化为false
     }
@@ -43,7 +43,7 @@ public:
         delptr->~T(); // 析构存储对象实例
         Slot *backslot = reinterpret_cast<Slot *>(delptr);//归还的结点
         {
-            int i = backslot - static_cast<Slot *>(pool_);
+            size_t i = backslot - static_cast<Slot *>(pool_);
             used_[i] = false;
         }
         backslot->next = free_node_;
@@ -59,7 +59,7 @@ public:
             free_node_ = free_node_->next;
             new (&allo_node_->obj) T(std::forward<Args>(args)...);
             {
-                int i = allo_node_ - static_cast<Slot *>(pool_); // 计算当前使用结点位置
+                size_t i = allo_node_ - static_cast<Slot *>(pool_); // 计算当前使用结点位置
                 used_[i] = true;
             }
             return &allo_node_->obj; // allo_node_的指针值与联合体成员的指针值一致
@@ -70,10 +70,10 @@ public:
       // 参数列表用于传构造T实例所需的参数
       // allocate摘出了链表结构，但内存仍然可通过数组下标访问到。经过重组后，下标准确，链表访问顺序改变
 
-    ~OBJECTPOOL()
+    ~ObjectPool()
     {
         Slot *Slots = static_cast<Slot *>(pool_);
-        for (int i = 0; i < Poolsize; i++)
+        for (size_t i = 0; i < Poolsize; i++)
         {
             if (used_[i])
                 Slots[i].obj.~T();

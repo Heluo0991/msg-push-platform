@@ -24,7 +24,7 @@ LDFLAGS  = -lsqlite3 -lpthread       # 链接选项: SQLite + pthread
 TARGET   = mpserver                  # 最终可执行文件名
 
 # 源文件列表 —— 只列 .cpp (头文件被 include，不单独编译)
-SRCS     = src/main.cpp
+SRCS     = $(wildcard src/*.cpp)
 # 最终项目: SRCS = $(wildcard src/*.cpp)   ← 自动收集所有 .cpp
 
 # 目标文件列表 —— 把 .cpp 换成 .o

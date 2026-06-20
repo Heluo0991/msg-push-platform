@@ -8,7 +8,7 @@ int main()
    
     //test1 push/pop single thread
     {
-        LOCKFREEQUEUE<int,64> q1;
+        LockFreeQueue<int,64> q1;
         assert(q1.empty());
         for(int i=0;i<10;i++)
         {
@@ -25,7 +25,7 @@ int main()
 
     //test2 queue full
     {
-        LOCKFREEQUEUE<int,4> q2;
+        LockFreeQueue<int,4> q2;
         assert(q2.empty());
         for(int i=0;i<4;i++)
         {
@@ -37,7 +37,7 @@ int main()
 
     //test 3 muti thread test
     {
-        LOCKFREEQUEUE<int,1024> q3;
+        LockFreeQueue<int,1024> q3;
         const int N=1000;
 
         //producer thread
@@ -72,7 +72,7 @@ int main()
 
     //test4 move test
     {
-        LOCKFREEQUEUE<std::string,64> q4;
+        LockFreeQueue<std::string,64> q4;
         {
             std::string s="Hello";
             assert(q4.push(std::move(s)));
@@ -90,7 +90,7 @@ int main()
 
     //test5 destructor
     {
-        LOCKFREEQUEUE<int,8> q5;
+        LockFreeQueue<int,8> q5;
         for(int i=0;i<5;i++)
         {
             assert(q5.push(std::move(i)));

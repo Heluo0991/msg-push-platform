@@ -1,6 +1,6 @@
 #include "thread_pool.h"
 #include<iostream>
-THREADPOOL::THREADPOOL(size_t n) : stop_(false)
+ThreadPool::ThreadPool(size_t n) : stop_(false)
 {
     for (size_t i = 0; i < n; i++)
     {
@@ -24,7 +24,7 @@ THREADPOOL::THREADPOOL(size_t n) : stop_(false)
     }
 }
 
-THREADPOOL::~THREADPOOL()
+ThreadPool::~ThreadPool()
 {
     {
         std::lock_guard<std::mutex> lock(mtx_);
