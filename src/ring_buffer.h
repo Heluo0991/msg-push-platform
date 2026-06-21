@@ -10,8 +10,8 @@ class RingBuffer
 private:
     static constexpr size_t Capacity =4096;//每个环形缓冲区4kb内存
     char buf_[Capacity];//字符串环形缓冲区
-    size_t drain_ptr_;
-    size_t pop_ptr_;
+    size_t drain_ptr_ = 0;
+    size_t pop_ptr_ = 0;
     char delimiter_;//分割符号
 public:
     explicit RingBuffer(const char);

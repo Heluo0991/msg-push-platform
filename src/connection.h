@@ -27,6 +27,8 @@ public:
     Connection &operator=(const Connection &) = delete;
     Connection(Connection &&) = delete;
     Connection &operator=(Connection &&) = delete;
+    void set_username(const std::string&);
+    void set_state(State);
     int get_fd() const;
     State get_state() const;
     std::string get_username() const;

@@ -74,13 +74,25 @@ test_protocol:
 test_thread_pool:
 	$(CXX) $(CXXFLAGS) -I . test/test_thread_pool.cpp src/thread_pool.cpp -o test/test_thread_pool $(LDFLAGS) && ./test/test_thread_pool
 
+# Day 3: 环形缓冲区
+test_ring_buffer:
+	$(CXX) $(CXXFLAGS) -I . test/test_ring_buffer.cpp src/ring_buffer.cpp -o test/test_ring_buffer && ./test/test_ring_buffer
+
+# Day 3: Reactor 集成测试
+test_reactor:
+	$(CXX) $(CXXFLAGS) -I . -I src test/test_reactor.cpp src/reactor.cpp src/connection.cpp src/fd_guard.cpp src/ring_buffer.cpp src/thread_pool.cpp -o test/test_reactor $(LDFLAGS) && ./test/test_reactor
+
+# Day 3: 连接管理器
+test_connection:
+	$(CXX) $(CXXFLAGS) -I . test/test_connection.cpp src/connection.cpp src/fd_guard.cpp src/ring_buffer.cpp -o test/test_connection && ./test/test_connection
+
 # Day 4: 数据库
 test_db:
-	$(CXX) $(CXXFLAGS) -I src test/test_db.cpp -o test/test_db $(LDFLAGS) && ./test/test_db
+	$(CXX) $(CXXFLAGS) -I src test/test_db.cpp src/db_store.cpp -o test/test_db $(LDFLAGS) && ./test/test_db
 	@rm -f test.db
 
 # 一键全跑（仅自动化测试，不含 nc 手动集成测试和 valgrind）
-test: test_queue test_pool test_protocol test_thread_pool test_db
+test: test_queue test_pool test_protocol test_thread_pool test_ring_buffer test_connection test_reactor
 	@echo "=== 全部单元测试通过 ==="
 
 # ============================================================
@@ -88,8 +100,8 @@ test: test_queue test_pool test_protocol test_thread_pool test_db
 # ============================================================
 clean:
 	rm -f $(OBJS) $(TARGET)
-	rm -f test/test_queue test/test_pool test/test_protocol test/test_thread_pool test/test_db
-
+	rm -f test/test_queue test/test_pool test/test_protocol test/test_thread_pool test/test_ring_buffer test/test_connection test/test_reactor test/test_db
+	rm -f test.db
 # ============================================================
 # 声明哪些 target 不是真实文件 (防止和同名文件冲突)
 # ============================================================

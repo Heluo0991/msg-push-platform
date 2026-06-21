@@ -1,0 +1,143 @@
+#ifndef BROKER
+#define BROKER
+#include "connection.h"
+#include <unordered_map>
+#include "protocol.h"
+#include "db_store.h"
+
+namespace Broker
+{
+    template <class... Ts>
+    struct overloaded : Ts...
+    {
+        using Ts::operator()...;                       // 合并每个lambda的重载
+        overloaded(Ts... ts) : Ts(std::move(ts))... {} // 初始化构造lambda实例，交给CTAD
+    };
+    // 整个逻辑是，模板overloaded结构体继承了全部六种lambda，
+    // 然后内部展开了六个传入参数的默认operator()重载，也就是lambda表达式函数体的内容
+
+    // 虽然每个lambda都是不同类型，但是匿名的，无法在参数列表显示指定其类模板，
+    // 只能靠类模板参数推导CTAD，所以需要在参数列表内构造lambda实例让编译器推导
+
+    inline void broadcast(std::shared_ptr<Connection> from, const ChatMsg &msg, const std::unordered_map<int, std::shared_ptr<Connection>> &connections)
+    {
+        json resp;
+        resp["type"] = "chat";
+        resp["from"] = msg.from;
+        resp["content"] = msg.content;
+        for (const auto &[fd,conn]: connections)
+        {
+           if(conn!=from) conn->send_line(resp.dump()); // 给每个连接都广播，除了自己
+        }
+    }
+
+    inline void private_msg(std::shared_ptr<Connection> from, const PrivateMsg &msg)
+    {
+    }
+
+    inline void group_msg(std::shared_ptr<Connection> from, const GroupMsg &msg)
+    {
+    }
+
+    inline void login_msg(std::shared_ptr<Connection> from, const LoginMsg &msg, DBstore &db)
+    {
+        // 根据门卫过滤，是非Chat状态连接才能调用这个接口
+        if (db.verify_login(msg.username, msg.password_hash))
+        {
+            // 登录成功，更改连接状态
+            from->set_state(Connection::State::CHAT);
+            from->set_username(msg.username);
+
+            json resp;
+            resp["type"] = "login_ok";
+            resp["user"] = msg.username;
+            from->send_line(resp.dump()); // 发回一个登录成功的报文
+        }
+        else
+        {
+            // 登录失败，可能是未注册，可能是密码错误，先处理未注册
+            if (db.register_user(msg.username, msg.password_hash))
+            {
+                // 注册成功，更改连接状态
+                from->set_state(Connection::State::CHAT);
+                from->set_username(msg.username);
+                json resp;
+                resp["type"] = "register&login_ok";
+                resp["user"] = msg.username;
+                from->send_line(resp.dump()); // 发回一个注册并登录成功的报文
+            }
+            else
+            {
+                // 登录失败且注册失败，大概率是密码错误
+                json resp;
+                resp["type"] = "error";
+                resp["code"] = -1;
+                resp["reason"] = "login failed";
+                from->send_line(resp.dump());
+            }
+        }
+    }
+
+    inline void ack_msg(std::shared_ptr<Connection> from, const AckMsg &msg)
+    {
+    }
+
+    inline void error_msg(std::shared_ptr<Connection> from, const ErrorMsg &msg)
+    {
+        json resp;
+        resp["type"] = "error";
+        resp["code"] = msg.code;
+        resp["reason"] = msg.reason;
+        from->send_line(resp.dump()); // 发回客户端一个json格式错误
+    }
+
+    inline void dispatch(std::shared_ptr<Connection> from, const MessageBody &msg, const std::unordered_map<int, std::shared_ptr<Connection>> &connections, DBstore &db)
+    {
+
+        // 门卫，如果非Chat状态连接只能进行登录请求
+        bool is_login = std::holds_alternative<LoginMsg>(msg);
+        if (from->get_state() == Connection::State::LOGIN && !is_login)
+        {
+            json resp;
+            resp["type"] = "error";
+            resp["code"] = -1;
+            resp["reason"] = "Please login first";
+            from->send_line(resp.dump());
+            return; // 非登录msg但connect未登录，需求他先登录
+        }
+
+        std::visit(
+            overloaded{
+                [&](const ChatMsg &m)
+                {
+                    broadcast(from, m, connections);
+                },
+                [&](const LoginMsg &m)
+                {
+                    login_msg(from, m, db);
+                },
+                [&](const GroupMsg &m)
+                {
+                    group_msg(from, m);
+                },
+                [&](const PrivateMsg &m)
+                {
+                    private_msg(from, m);
+                },
+                [&](const AckMsg &m)
+                {
+                    ack_msg(from, m);
+                },
+                [&](const ErrorMsg &m)
+                {
+                    error_msg(from, m);
+                }},
+            msg); // 构造overloaded匿名实例，六种lambda参数，有6个operator()重载
+                  // lambda 捕获from
+                  // visit取对应类型msg引用给匿名overloaded实例，编译期生成对应表，查表直接选择匹配
+                  // visit内overloaded实例名为visitor,调用visitor().operator();//调用对应重载
+                  // visit实际就是配套variant使用的根据类型选择重载的工具
+    }
+}
+
+#endif

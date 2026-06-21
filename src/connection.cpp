@@ -45,3 +45,11 @@ std::time_t Connection::idle_seconds() const
 {
     return std::time(nullptr) - last_active_; // 距离上次使用这个连接过了多久
 }
+
+void Connection::set_state(Connection::State s){
+    state_=s;
+}
+
+void Connection::set_username(const std::string& username){
+    username_=username;
+}
