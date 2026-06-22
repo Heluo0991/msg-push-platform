@@ -56,7 +56,8 @@ void Reactor::handle_accept()
         subscribe(client_fd_);
         auto conn = std::shared_ptr<Connection>(
             pool_.allocate(client_fd_),
-            [this](Connection *ptr) { pool_.deallocate(ptr); });
+            [this](Connection *ptr)
+            { pool_.deallocate(ptr); });
 
         // 手动 drain 一轮，防止 ET 竞态：accept 和 send 同时到达时 epoll 漏通知
         conn->rbuf_.drain(client_fd_);
@@ -67,19 +68,30 @@ void Reactor::handle_accept()
             conn->touch();
         }
 
-        connections_.emplace(client_fd_, conn);
+        {
+            std::lock_guard<std::mutex> lock(connections_mtx_);
+            connections_.emplace(client_fd_, conn);
+        }
     }
 }
 
-void Reactor::handle_read(std::shared_ptr<Connection> conn)
+void Reactor::handle_read(std::shared_ptr<Connection> conn, std::vector<std::unique_ptr<LockFreeQueue<RawMessage, 1024>>> &to_workers)
 {
-    conn->rbuf_.drain(conn->get_fd());//送入缓冲区
+    static std::atomic<size_t> count{0};
+    conn->rbuf_.drain(conn->get_fd()); // 送入缓冲区
     std::string recv_msg;
     while (true)
     {
-        recv_msg = conn->rbuf_.try_pop();//从缓冲区取字符
-        if (recv_msg.empty()) break;
-        process_line(conn, recv_msg);//发送回
+        recv_msg = conn->rbuf_.try_pop(); // 从缓冲区取字符
+        if (recv_msg.empty())
+            break;
+        // 不管怎样，取到生字符串了，内部根据轮询逻辑调用SPSC队列塞资源
+        size_t idx = count.fetch_add(1, std::memory_order_relaxed) % to_workers.size();
+        if (!to_workers[idx]->push(RawMessage{std::weak_ptr(conn), std::move(recv_msg)}))
+        {
+            fprintf(stderr, "[Reactor] : SPSC queue full,dropping message\n");
+        } // push返回false，代表内部环形缓冲区满，待处理
+        // 把生字符串塞入一个spsc队列，带上连接的弱指针
         conn->touch();
     }
 }
@@ -88,20 +100,22 @@ void Reactor::process_line(std::shared_ptr<Connection> conn, const std::string &
 {
     MessageBody json_msg;
     try_parse_line(raw, json_msg);
-    std::string resp = "{\"type\":\"chat\",\"from\":\"server\",\"msg\":\""
-                     + std::to_string(json_msg.index())
-                     + "\"}";
+    std::string resp = "{\"type\":\"chat\",\"from\":\"server\",\"msg\":\"" + std::to_string(json_msg.index()) + "\"}";
     conn->send_line(resp);
 }
 
 void Reactor::close_connection(std::shared_ptr<Connection> conn)
 {
     epoll_ctl(epfd_, EPOLL_CTL_DEL, conn->get_fd(), NULL);
-    connections_.erase(conn->get_fd());
+    {
+        std::lock_guard<std::mutex> lock(connections_mtx_);
+        connections_.erase(conn->get_fd());
+    }
+
     conn.reset();
 }
 
-void Reactor::run()
+void Reactor::run(std::vector<std::unique_ptr<LockFreeQueue<RawMessage, 1024>>> &to_workers)
 {
     epoll_event events[64];
     while (true)
@@ -120,12 +134,22 @@ void Reactor::run()
             }
             else
             {
-                auto it = connections_.find(events[i].data.fd);
-                if (it != connections_.end())
-                    handle_read(it->second);
+
+                {
+                    std::lock_guard<std::mutex> lock(connections_mtx_);
+                    auto it = connections_.find(events[i].data.fd); // 处理一个连接
+                    if (it != connections_.end())
+                        handle_read(it->second, to_workers);
+                }
             }
         }
     }
+}
+
+std::unordered_map<int, std::shared_ptr<Connection>> &Reactor::get_connections()
+{
+    std::lock_guard<std::mutex> lock(connections_mtx_);
+    return connections_;
 }
 
 Reactor::~Reactor()
