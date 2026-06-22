@@ -152,6 +152,10 @@ std::unordered_map<int, std::shared_ptr<Connection>> &Reactor::get_connections()
     return connections_;
 }
 
+std::mutex& Reactor::get_connections_mutex(){
+    return connections_mtx_;//暴露内部关于connections_的资源锁，让外部也能拿到
+} 
+
 Reactor::~Reactor()
 {
     // 全程RAII,Reactor析构无资源需要手动释放

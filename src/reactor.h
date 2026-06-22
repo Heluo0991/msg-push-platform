@@ -33,6 +33,7 @@ public:
     void subscribe(int);                                // 注册客户端fd到红黑树
     void close_connection(std::shared_ptr<Connection>); // 从connections_中删除这个连接，从内存池取回内存
     std::unordered_map<int, std::shared_ptr<Connection>>& get_connections();
+    std::mutex& get_connections_mutex();
     ~Reactor();
 };
 
