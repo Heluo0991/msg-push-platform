@@ -118,11 +118,13 @@ void Reactor::close_connection(std::shared_ptr<Connection> conn)
 void Reactor::run(std::vector<std::unique_ptr<LockFreeQueue<RawMessage, 1024>>> &to_workers)
 {
     epoll_event events[64];
-    while (true)
+    while (running_.load(std::memory_order_relaxed))
     {
-        int events_nums = epoll_wait(epfd_, events, 64, -1);
+        int events_nums = epoll_wait(epfd_, events, 64, 1000); // 1s 超时，让 running_ 有机会被检查
+        if (events_nums == 0) continue;                         // 超时，回到 while 检查 running_
         if (events_nums < 0)
         {
+            if (errno == EINTR) continue; // 信号打断，回到 while 检查 running_
             perror("[Reactor] : epoll_wait()");
             break;
         }

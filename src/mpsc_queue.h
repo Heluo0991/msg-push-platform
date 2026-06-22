@@ -1,30 +1,43 @@
-#ifndef MPMCQUEUE
-#define MPMCQUEUE
-#include<string>
-#include<queue>
-#include<mutex>
-#include"connection.h"
-#include"protocol.h"
-#include<memory>
-struct Reply{
+#ifndef MPSC_QUEUE
+#define MPSC_QUEUE
+#include <string>
+#include <queue>
+#include <mutex>
+#include "message.h"
+
+struct Reply
+{
     int fd_;
-    MessageBody json_;//处理过的json字符串
+    MessageBody body_; // Worker 处理完的 variant，主线程序列化后发出
 };
 
-class MPSCQueue{//多工作线程生产者，单主线程消费者
+class MPSCQueue
+{ // 多 Worker 生产，单 Main 消费
 private:
     std::queue<Reply> queue_;
     std::mutex mtx_;
+
 public:
-    MPSCQueue(const MPSCQueue&)=delete;
-    MPSCQueue& operator=(const MPSCQueue&)=delete;
-    MPSCQueue(MPSCQueue&&)=delete;
-    MPSCQueue& operator=(MPSCQueue&)=delete;
-    MPSCQueue();
-    void push(std::shared_ptr<Connection>);
-    bool pop(Reply&);
-    ~MPSCQueue();
+    MPSCQueue() = default;
+    MPSCQueue(const MPSCQueue &) = delete;
+    MPSCQueue &operator=(const MPSCQueue &) = delete;
+    MPSCQueue(MPSCQueue &&) = delete;
+    MPSCQueue &operator=(MPSCQueue &&) = delete;
+
+    void push(Reply &&r)
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        queue_.push(std::move(r));
+    }
+
+    bool pop(Reply &out)
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        if (queue_.empty()) return false;
+        out = std::move(queue_.front());
+        queue_.pop();
+        return true;
+    }
 };
 
-
-#endif  
+#endif
