@@ -73,13 +73,13 @@ void Reactor::handle_accept()
 
 void Reactor::handle_read(std::shared_ptr<Connection> conn)
 {
-    conn->rbuf_.drain(conn->get_fd());
+    conn->rbuf_.drain(conn->get_fd());//送入缓冲区
     std::string recv_msg;
     while (true)
     {
-        recv_msg = conn->rbuf_.try_pop();
+        recv_msg = conn->rbuf_.try_pop();//从缓冲区取字符
         if (recv_msg.empty()) break;
-        process_line(conn, recv_msg);
+        process_line(conn, recv_msg);//发送回
         conn->touch();
     }
 }
