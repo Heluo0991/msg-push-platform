@@ -33,7 +33,7 @@ public:
     Reactor(Reactor &&) = delete;
     Reactor &operator=(Reactor &&) = delete;
     void run(ThreadPool &,DBstore &,MPSCQueue&);
-    void handle_accept();
+    void handle_accept(ThreadPool&, DBstore&, MPSCQueue&);
     void handle_read(std::shared_ptr<Connection>,ThreadPool&,DBstore&,MPSCQueue&);
     void process_line(std::shared_ptr<Connection>, const std::string &);
     void subscribe(int);                                // 注册客户端fd到红黑树

@@ -37,7 +37,7 @@ void Reactor::subscribe(int fd)
     epoll_ctl(epfd_, EPOLL_CTL_ADD, fd, &ev);
 }
 
-void Reactor::handle_accept()
+void Reactor::handle_accept(ThreadPool& workers, DBstore& db, MPSCQueue& replyqueue)
 {
     while (true)
     {
@@ -61,53 +61,39 @@ void Reactor::handle_accept()
 
         // 手动 drain 一轮，防止 ET 竞态：accept 和 send 同时到达时 epoll 漏通知
         conn->rbuf_.drain(client_fd_);
-        std::string line;
-        while (!(line = conn->rbuf_.try_pop()).empty())
-        {
-            process_line(conn, line);
-            conn->touch();
-        }
 
         {
             std::lock_guard<std::mutex> lock(connections_mtx_);
             connections_.emplace(client_fd_, conn);
         }
+
+        // drain 之后立刻手动调度一次 handle_read（绕过 epoll 通知）
+        handle_read(conn, workers, db, replyqueue);
     }
 }
 
 void Reactor::handle_read(std::shared_ptr<Connection> conn,ThreadPool& workers,DBstore& db,MPSCQueue& replyqueue)
 {
-    conn->rbuf_.drain(conn->get_fd()); // 送入缓冲区
+    conn->rbuf_.drain(conn->get_fd());
     std::string recv_msg;
     while (true)
     {
-        recv_msg = conn->rbuf_.try_pop(); // 从缓冲区取字符
-        if (recv_msg.empty())break;
+        recv_msg = conn->rbuf_.try_pop();
+        if (recv_msg.empty()) break;
 
-        RawMessage raw ={conn,recv_msg};//初始化会变成weak_ptr
-        workers.submit([&,Raw=std::move(raw)]{//移动获取防止主线程已经析构raw
-            auto conn_lock = Raw.wp_.lock();//确认连接存活
-            if(conn_lock!=nullptr){
-                MessageBody msg_body;
-                try_parse_line(Raw.raw_,msg_body);
-                std::string reply_json;
-
-                {
-                    std::lock_guard<std::mutex> lock(connections_mtx_);
-                    Broker::dispatch(conn_lock,msg_body,connections_,db,replyqueue);//针对connections_需要上锁
-                }
+        RawMessage raw ={conn,recv_msg};
+        workers.submit([&,Raw=std::move(raw)]{
+            auto conn_lock = Raw.wp_.lock();
+            if(!conn_lock) return;
+            MessageBody msg_body;
+            try_parse_line(Raw.raw_,msg_body);
+            {
+                std::lock_guard<std::mutex> lock(connections_mtx_);
+                Broker::dispatch(conn_lock,msg_body,connections_,db,replyqueue);
             }
         });
         conn->touch();
     }
-}
-
-void Reactor::process_line(std::shared_ptr<Connection> conn, const std::string &raw)
-{
-    MessageBody json_msg;
-    try_parse_line(raw, json_msg);
-    std::string resp = "{\"type\":\"chat\",\"from\":\"server\",\"msg\":\"" + std::to_string(json_msg.index()) + "\"}";
-    conn->send_line(resp);
 }
 
 void Reactor::close_connection(std::shared_ptr<Connection> conn)
@@ -126,27 +112,21 @@ void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue)
     epoll_event events[64];
     while (true)
     {
-        int events_nums = epoll_wait(epfd_, events, 64, -1);
+        int events_nums = epoll_wait(epfd_, events, 64, 100); // 100ms 超时，及时 drain reply
+        // fprintf(stderr, "[run] epoll_wait returned %d events\n", events_nums);
         if (events_nums < 0)
         {
             perror("[Reactor] : epoll_wait()");
             break;
         }
 
-        // I/O 处理完了，把积压的replyqueue发出去
-        Reply reply;
-        while (replyqueue.pop(reply))
-        {
-            auto it = connections_.find(reply.fd_);
-            if (it != connections_.end())
-                it->second->send_line(reply.json_);
-        }
+       
 
         for (int i = 0; i < events_nums; i++)
         {
             if (events[i].data.fd == static_cast<int>(listen_fd_))
             {
-                handle_accept();
+                handle_accept(workers, db, replyqueue);
             }
             else
             {
@@ -157,6 +137,20 @@ void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue)
                         handle_read(it->second, workers, db, replyqueue);
                 }
             }
+        }
+
+                 // I/O 处理完了，把积压的replyqueue发出去
+        Reply reply;
+        while (replyqueue.pop(reply))
+        {
+            auto it = connections_.find(reply.fd_);
+            if (it != connections_.end())
+                it->second->send_line(reply.json_);
+        }
+        {
+            auto it = connections_.find(reply.fd_);
+            if (it != connections_.end())
+                it->second->send_line(reply.json_);
         }
     }
 }
