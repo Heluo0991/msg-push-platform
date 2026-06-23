@@ -75,23 +75,29 @@ void Reactor::handle_accept()
     }
 }
 
-void Reactor::handle_read(std::shared_ptr<Connection> conn, std::vector<std::unique_ptr<LockFreeQueue<RawMessage, 1024>>> &to_workers)
+void Reactor::handle_read(std::shared_ptr<Connection> conn,ThreadPool& workers,DBstore& db,MPSCQueue& replyqueue)
 {
-    static std::atomic<size_t> count{0};
     conn->rbuf_.drain(conn->get_fd()); // 送入缓冲区
     std::string recv_msg;
     while (true)
     {
         recv_msg = conn->rbuf_.try_pop(); // 从缓冲区取字符
-        if (recv_msg.empty())
-            break;
-        // 不管怎样，取到生字符串了，内部根据轮询逻辑调用SPSC队列塞资源
-        size_t idx = count.fetch_add(1, std::memory_order_relaxed) % to_workers.size();
-        if (!to_workers[idx]->push(RawMessage{std::weak_ptr(conn), std::move(recv_msg)}))
-        {
-            fprintf(stderr, "[Reactor] : SPSC queue full,dropping message\n");
-        } // push返回false，代表内部环形缓冲区满，待处理
-        // 把生字符串塞入一个spsc队列，带上连接的弱指针
+        if (recv_msg.empty())break;
+
+        RawMessage raw ={conn,recv_msg};//初始化会变成weak_ptr
+        workers.submit([&,Raw=std::move(raw)]{//移动获取防止主线程已经析构raw
+            auto conn_lock = Raw.wp_.lock();//确认连接存活
+            if(conn_lock!=nullptr){
+                MessageBody msg_body;
+                try_parse_line(Raw.raw_,msg_body);
+                std::string reply_json;
+
+                {
+                    std::lock_guard<std::mutex> lock(connections_mtx_);
+                    Broker::dispatch(conn_lock,msg_body,connections_,db,replyqueue);//针对connections_需要上锁
+                }
+            }
+        });
         conn->touch();
     }
 }
@@ -115,19 +121,27 @@ void Reactor::close_connection(std::shared_ptr<Connection> conn)
     conn.reset();
 }
 
-void Reactor::run(std::vector<std::unique_ptr<LockFreeQueue<RawMessage, 1024>>> &to_workers)
+void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue)
 {
     epoll_event events[64];
-    while (running_.load(std::memory_order_relaxed))
+    while (true)
     {
-        int events_nums = epoll_wait(epfd_, events, 64, 1000); // 1s 超时，让 running_ 有机会被检查
-        if (events_nums == 0) continue;                         // 超时，回到 while 检查 running_
+        int events_nums = epoll_wait(epfd_, events, 64, -1);
         if (events_nums < 0)
         {
-            if (errno == EINTR) continue; // 信号打断，回到 while 检查 running_
             perror("[Reactor] : epoll_wait()");
             break;
         }
+
+        // I/O 处理完了，把积压的replyqueue发出去
+        Reply reply;
+        while (replyqueue.pop(reply))
+        {
+            auto it = connections_.find(reply.fd_);
+            if (it != connections_.end())
+                it->second->send_line(reply.json_);
+        }
+
         for (int i = 0; i < events_nums; i++)
         {
             if (events[i].data.fd == static_cast<int>(listen_fd_))
@@ -136,12 +150,11 @@ void Reactor::run(std::vector<std::unique_ptr<LockFreeQueue<RawMessage, 1024>>> 
             }
             else
             {
-
                 {
                     std::lock_guard<std::mutex> lock(connections_mtx_);
-                    auto it = connections_.find(events[i].data.fd); // 处理一个连接
+                    auto it = connections_.find(events[i].data.fd);
                     if (it != connections_.end())
-                        handle_read(it->second, to_workers);
+                        handle_read(it->second, workers, db, replyqueue);
                 }
             }
         }

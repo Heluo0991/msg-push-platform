@@ -11,14 +11,18 @@
 #include "lockfree_queue.h"
 #include "rawmessage.h"
 #include <mutex>
-#include <atomic>
+#include <atomic>   // 信号处理用，暂时注释
+#include"thread_pool.h"
+#include"broker.h"
+#include "db_store.h"
+#include"mpsc_queue.h"
 class Reactor
 {
 private:
     FdGuard listen_fd_;                                                // 监听fd
     FdGuard epfd_;                                                     // epoll的fd
     ObjectPool<Connection, 256> pool_;                                 // 256个connection实例大小的裸内存池
-    std::atomic<bool> running_{true};                          // run() 循环控制
+    // std::atomic<bool> running_{true};    // 信号处理用，暂时注释
     std::mutex connections_mtx_;                               // 单独给connections的锁，因为子线程需要读他
     std::unordered_map<int, std::shared_ptr<Connection>> connections_; // 客户端fd到连接的映射表
     // 反向析构，pool_实例先死会导致，connections_死了之后share_ptr计数归零，调用pool_.deallocate()未定义行为
@@ -28,16 +32,18 @@ public:
     Reactor &operator=(const Reactor &) = delete;
     Reactor(Reactor &&) = delete;
     Reactor &operator=(Reactor &&) = delete;
-    void run(std::vector<std::unique_ptr<LockFreeQueue<RawMessage, 1024>>> &);
+    void run(ThreadPool &,DBstore &,MPSCQueue&);
     void handle_accept();
-    void handle_read(std::shared_ptr<Connection>, std::vector<std::unique_ptr<LockFreeQueue<RawMessage, 1024>>> &);
+    void handle_read(std::shared_ptr<Connection>,ThreadPool&,DBstore&,MPSCQueue&);
     void process_line(std::shared_ptr<Connection>, const std::string &);
     void subscribe(int);                                // 注册客户端fd到红黑树
     void close_connection(std::shared_ptr<Connection>); // 从connections_中删除这个连接，从内存池取回内存
     std::unordered_map<int, std::shared_ptr<Connection>>& get_connections();
+    /*
     void stop() { running_.store(false); }         // 信号处理调用，优雅退出
+    */
     std::mutex& get_connections_mutex();
-    ~Reactor();
+    ~Reactor(); 
 };
 
 // Connection实例的共享指针全部由unordered_map管理，离开作用域自动析构share_ptr，然后自动析构Connection

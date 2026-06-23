@@ -53,3 +53,8 @@ void Connection::set_state(Connection::State s){
 void Connection::set_username(const std::string& username){
     username_=username;
 }
+
+bool Connection::try_claim_login(){
+    State expected = State::LOGIN;
+    return state_.compare_exchange_strong(expected,State::CHAT);
+}

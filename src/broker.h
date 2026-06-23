@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include "protocol.h"
 #include "db_store.h"
+#include"mpsc_queue.h"
 
 namespace Broker
 {
@@ -19,39 +20,49 @@ namespace Broker
     // 虽然每个lambda都是不同类型，但是匿名的，无法在参数列表显示指定其类模板，
     // 只能靠类模板参数推导CTAD，所以需要在参数列表内构造lambda实例让编译器推导
 
-    inline void broadcast(std::shared_ptr<Connection> from, const ChatMsg &msg, const std::unordered_map<int, std::shared_ptr<Connection>> &connections)
+    inline void broadcast(std::shared_ptr<Connection> from, const ChatMsg &msg, const std::unordered_map<int, std::shared_ptr<Connection>> &connections,MPSCQueue & replyqueue)
     {
         json resp;
         resp["type"] = "chat";
         resp["from"] = msg.from;
         resp["content"] = msg.content;
-        for (const auto &[fd,conn]: connections)
+        for (const auto &it: connections)
         {
-           if(conn!=from) conn->send_line(resp.dump()); // 给每个连接都广播，除了自己
+           if(it.second!=from) replyqueue.push(Reply{it.second->get_fd(),resp.dump()}); // 给每个连接都广播，除了自己
         }
     }
 
-    inline void private_msg(std::shared_ptr<Connection> from, const PrivateMsg &msg)
+    inline void private_msg(std::shared_ptr<Connection> from, const PrivateMsg &msg,MPSCQueue & replyqueue)
     {
     }
 
-    inline void group_msg(std::shared_ptr<Connection> from, const GroupMsg &msg)
+    inline void group_msg(std::shared_ptr<Connection> from, const GroupMsg &msg,MPSCQueue & replyqueue)
     {
     }
 
-    inline void login_msg(std::shared_ptr<Connection> from, const LoginMsg &msg, DBstore &db)
+    inline void login_msg(std::shared_ptr<Connection> from, const LoginMsg &msg, DBstore &db,MPSCQueue & replyqueue)
     {
         // 根据门卫过滤，是非Chat状态连接才能调用这个接口
+        //若出现多线程短时间同时处理Login_msg请求，也就是多个非chat连接竞争写state非锁变量
+        if(!from->try_claim_login()){//原子更改连接状态和检查，其他人登录请求无法通过这个guard
+            json resp;
+            resp["type"] = "error";
+            resp["reason"] = "frequent_login";
+            replyqueue.push(Reply{from->get_fd(),resp.dump()});
+            return;
+        }//发回一个重复登录的回复
+
+        //正常登录
+
         if (db.verify_login(msg.username, msg.password_hash))
         {
             // 登录成功，更改连接状态
-            from->set_state(Connection::State::CHAT);
-            from->set_username(msg.username);
+            from->set_username(msg.username);//由于guard保护，不怕竞态写username
 
             json resp;
             resp["type"] = "login_ok";
             resp["user"] = msg.username;
-            from->send_line(resp.dump()); // 发回一个登录成功的报文
+            replyqueue.push(Reply{from->get_fd(),resp.dump()}); // 发回一个登录成功的报文
         }
         else
         {
@@ -64,7 +75,7 @@ namespace Broker
                 json resp;
                 resp["type"] = "register&login_ok";
                 resp["user"] = msg.username;
-                from->send_line(resp.dump()); // 发回一个注册并登录成功的报文
+                replyqueue.push(Reply{from->get_fd(),resp.dump()}); // 发回一个注册并登录成功的报文
             }
             else
             {
@@ -73,25 +84,25 @@ namespace Broker
                 resp["type"] = "error";
                 resp["code"] = -1;
                 resp["reason"] = "login failed";
-                from->send_line(resp.dump());
+                replyqueue.push(Reply{from->get_fd(),resp.dump()});
             }
         }
     }
 
-    inline void ack_msg(std::shared_ptr<Connection> from, const AckMsg &msg)
+    inline void ack_msg(std::shared_ptr<Connection> from, const AckMsg &msg,MPSCQueue & replyqueue)
     {
     }
 
-    inline void error_msg(std::shared_ptr<Connection> from, const ErrorMsg &msg)
+    inline void error_msg(std::shared_ptr<Connection> from, const ErrorMsg &msg,MPSCQueue & replyqueue)
     {
         json resp;
         resp["type"] = "error";
         resp["code"] = msg.code;
         resp["reason"] = msg.reason;
-        from->send_line(resp.dump()); // 发回客户端一个json格式错误
+        replyqueue.push(Reply{from->get_fd(),resp.dump()}); // 发回客户端一个json格式错误
     }
 
-    inline void dispatch(std::shared_ptr<Connection> from, const MessageBody &msg, const std::unordered_map<int, std::shared_ptr<Connection>> &connections, DBstore &db)
+    inline void dispatch(std::shared_ptr<Connection> from, const MessageBody &msg, const std::unordered_map<int, std::shared_ptr<Connection>> &connections, DBstore &db,MPSCQueue & replyqueue)
     {
 
         // 门卫，如果非Chat状态连接只能进行登录请求
@@ -102,7 +113,7 @@ namespace Broker
             resp["type"] = "error";
             resp["code"] = -1;
             resp["reason"] = "Please login first";
-            from->send_line(resp.dump());
+            replyqueue.push(Reply{from->get_fd(),resp.dump()});
             return; // 非登录msg但connect未登录，需求他先登录
         }
 
@@ -110,27 +121,27 @@ namespace Broker
             overloaded{
                 [&](const ChatMsg &m)
                 {
-                    broadcast(from, m, connections);
+                    broadcast(from, m, connections,replyqueue);
                 },
                 [&](const LoginMsg &m)
                 {
-                    login_msg(from, m, db);
+                    login_msg(from, m, db,replyqueue);
                 },
                 [&](const GroupMsg &m)
                 {
-                    group_msg(from, m);
+                    group_msg(from, m,replyqueue);
                 },
                 [&](const PrivateMsg &m)
                 {
-                    private_msg(from, m);
+                    private_msg(from, m,replyqueue);
                 },
                 [&](const AckMsg &m)
                 {
-                    ack_msg(from, m);
+                    ack_msg(from, m,replyqueue);
                 },
                 [&](const ErrorMsg &m)
                 {
-                    error_msg(from, m);
+                    error_msg(from, m,replyqueue);
                 }},
             msg); // 构造overloaded匿名实例，六种lambda参数，有6个operator()重载
                   // lambda 捕获from

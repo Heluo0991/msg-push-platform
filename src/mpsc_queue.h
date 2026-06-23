@@ -8,7 +8,7 @@
 struct Reply
 {
     int fd_;
-    MessageBody body_; // Worker 处理完的 variant，主线程序列化后发出
+    std::string json_ ;//子线程塞入MPSC队列的生字符串，json格式
 };
 
 class MPSCQueue
