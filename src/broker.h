@@ -37,7 +37,7 @@ namespace Broker
         }
     }
 
-    inline void private_msg(std::shared_ptr<Connection> from, const PrivateMsg &msg,MPSCQueue & replyqueue, const std::unordered_map<int, std::shared_ptr<Connection>> &connections, DBstore& db, UserMap& user_to_fd_)
+    inline void private_msg(std::shared_ptr<Connection> from, const PrivateMsg &msg,MPSCQueue & replyqueue, DBstore& db, UserMap& user_to_fd_)
     {
         if(!db.user_exists(msg.to)){
             json resp;
@@ -241,9 +241,11 @@ namespace Broker
         }
     }
 
+    /*ack_msg的功能为离线消息兜底，现在暂不实现
     inline void ack_msg(std::shared_ptr<Connection> from, const AckMsg &msg,MPSCQueue & replyqueue)
     {
     }
+    */
 
     inline void error_msg(std::shared_ptr<Connection> from, const ErrorMsg &msg,MPSCQueue & replyqueue)
     {
@@ -285,12 +287,13 @@ namespace Broker
                 },
                 [&](const PrivateMsg &m)
                 {
-                    private_msg(from, m, replyqueue, connections, db, user_to_fd_);
-                },
+                    private_msg(from, m, replyqueue, db, user_to_fd_);
+                },/*
                 [&](const AckMsg &m)
                 {
-                    ack_msg(from, m,replyqueue);
+                    //ack_msg(from, m,replyqueue);
                 },
+                */
                 [&](const ErrorMsg &m)
                 {
                     error_msg(from, m,replyqueue);

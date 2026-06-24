@@ -20,16 +20,18 @@ inline void try_parse_line(const std::string &raw, MessageBody &out)//需要内�
     }
     else if (type == "group")
     {
-        out = GroupMsg{js["from"],js["cmd"], js["group_name"], js["content"]};
+        out = GroupMsg{js.value("from", ""), js.value("cmd", ""), js.value("group", ""), js.value("content", "")};
     }
     else if (type == "private")
     {
         out = PrivateMsg{js["from"], js["to"], js["content"]};
     }
+    /*
     else if (type == "ack")
     {
         out = AckMsg{js["msg_id"]};
     }
+    */
     else
     {
         out = ErrorMsg{-1, "unknown message type: " + type};

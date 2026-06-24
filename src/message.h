@@ -30,17 +30,12 @@ struct PrivateMsg
     std::string content;
 };
 
-struct AckMsg
-{
-    std::string msg_id;
-};
-
 struct ErrorMsg
 {
     int code;
     std::string reason;
 };
 
-using MessageBody = std::variant<LoginMsg, ChatMsg, GroupMsg, PrivateMsg, AckMsg, ErrorMsg>;
+using MessageBody = std::variant<LoginMsg, ChatMsg, GroupMsg, PrivateMsg,  ErrorMsg>;
 
 #endif

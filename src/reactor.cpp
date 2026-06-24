@@ -75,6 +75,7 @@ void Reactor::handle_accept(ThreadPool& workers, DBstore& db, MPSCQueue& replyqu
 void Reactor::handle_read(std::shared_ptr<Connection> conn,ThreadPool& workers,DBstore& db,MPSCQueue& replyqueue, Broker::Groups& groups_, Broker::UserMap& user_to_fd_)
 {
     conn->rbuf_.drain(conn->get_fd());
+    fprintf(stderr, "[handle_read] fd=%d disconnected=%d\n", conn->get_fd(), conn->rbuf_.is_disconnected());
     if(conn->rbuf_.is_disconnected())
     {
         close_connection(conn,user_to_fd_,groups_);
@@ -139,12 +140,15 @@ void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue, Bro
             }
             else
             {
+                std::shared_ptr<Connection> conn;
                 {
                     std::lock_guard<std::mutex> lock(connections_mtx_);
                     auto it = connections_.find(events[i].data.fd);
                     if (it != connections_.end())
-                        handle_read(it->second, workers, db, replyqueue, groups_, user_to_fd_);
+                        conn = it->second; // 拷贝 shared_ptr，放锁后连接不会死
                 }
+                if (conn)
+                    handle_read(conn, workers, db, replyqueue, groups_, user_to_fd_);
             }
         }
 
