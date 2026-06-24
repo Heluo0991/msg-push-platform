@@ -14,5 +14,5 @@ int main(int argc, char *argv[])
     MPSCQueue replyqueue;
     ThreadPool workers(workernum);
     Reactor reactor(8080);
-    reactor.run(workers, db, replyqueue, groups_);
+    reactor.run(workers, db, replyqueue, groups_, user_to_fd);
 }

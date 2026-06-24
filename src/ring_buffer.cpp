@@ -26,6 +26,7 @@ void RingBuffer::drain(int fd)
         }
         else if (n == 0)
         {
+            disconnected_=true;
             break; // 对端关闭
         }
         else if (n < 0) // 返回-1
@@ -82,6 +83,11 @@ std::string RingBuffer::try_pop()
 bool RingBuffer::empty() const{
     return available()==Capacity;//可用量为容量
 }
+
+bool RingBuffer::is_disconnected()const{
+    return disconnected_;
+}
+
 
 void RingBuffer::clear()
 {

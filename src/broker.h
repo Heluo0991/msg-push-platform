@@ -37,7 +37,7 @@ namespace Broker
         }
     }
 
-    inline void private_msg(std::shared_ptr<Connection> from, const PrivateMsg &msg,MPSCQueue & replyqueue)
+    inline void private_msg(std::shared_ptr<Connection> from, const PrivateMsg &msg,MPSCQueue & replyqueue, const std::unordered_map<int, std::shared_ptr<Connection>> &connections, DBstore& db, UserMap& user_to_fd_)
     {
 
     }
@@ -167,7 +167,7 @@ namespace Broker
         }
     }
 
-    inline void login_msg(std::shared_ptr<Connection> from, const LoginMsg &msg, DBstore &db,MPSCQueue & replyqueue)
+    inline void login_msg(std::shared_ptr<Connection> from, const LoginMsg &msg, DBstore &db,MPSCQueue & replyqueue, UserMap& user_to_fd_)
     {
         // 根据门卫过滤，是非Chat状态连接才能调用这个接口
         //若出现多线程短时间同时处理Login_msg请求，也就是多个非chat连接竞争写state非锁变量
@@ -229,7 +229,7 @@ namespace Broker
         replyqueue.push(Reply{from->get_fd(),resp.dump()}); // 发回客户端一个json格式错误
     }
 
-    inline void dispatch(std::shared_ptr<Connection> from, const MessageBody &msg, const std::unordered_map<int, std::shared_ptr<Connection>> &connections, DBstore &db,MPSCQueue & replyqueue , Groups & groups_)
+    inline void dispatch(std::shared_ptr<Connection> from, const MessageBody &msg, const std::unordered_map<int, std::shared_ptr<Connection>> &connections, DBstore &db,MPSCQueue & replyqueue , Groups & groups_, UserMap& user_to_fd_)
     { 
 
         // 门卫，如果非Chat状态连接只能进行登录请求
@@ -252,7 +252,7 @@ namespace Broker
                 },
                 [&](const LoginMsg &m)
                 {
-                    login_msg(from, m, db,replyqueue);
+                    login_msg(from, m, db, replyqueue, user_to_fd_);
                 },
                 [&](const GroupMsg &m)
                 {
@@ -260,7 +260,7 @@ namespace Broker
                 },
                 [&](const PrivateMsg &m)
                 {
-                    private_msg(from, m,replyqueue);
+                    private_msg(from, m, replyqueue, connections, db, user_to_fd_);
                 },
                 [&](const AckMsg &m)
                 {

@@ -72,9 +72,14 @@ void Reactor::handle_accept(ThreadPool& workers, DBstore& db, MPSCQueue& replyqu
     }
 }
 
-void Reactor::handle_read(std::shared_ptr<Connection> conn,ThreadPool& workers,DBstore& db,MPSCQueue& replyqueue, Broker::Groups& groups_)
+void Reactor::handle_read(std::shared_ptr<Connection> conn,ThreadPool& workers,DBstore& db,MPSCQueue& replyqueue, Broker::Groups& groups_, Broker::UserMap& user_to_fd_)
 {
     conn->rbuf_.drain(conn->get_fd());
+    if(conn->rbuf_.is_disconnected())
+    {
+        close_connection(conn,user_to_fd_,groups_);
+        return;//对方发了FIN
+    }
     std::string recv_msg;
     while (true)
     {
@@ -89,25 +94,29 @@ void Reactor::handle_read(std::shared_ptr<Connection> conn,ThreadPool& workers,D
             try_parse_line(Raw.raw_,msg_body);
             {
                 std::lock_guard<std::mutex> lock(connections_mtx_);
-                Broker::dispatch(conn_lock,msg_body,connections_,db,replyqueue,groups_);
+                Broker::dispatch(conn_lock,msg_body,connections_,db,replyqueue,groups_,user_to_fd_);
             }
         });
         conn->touch();
     }
 }
 
-void Reactor::close_connection(std::shared_ptr<Connection> conn)
+void Reactor::close_connection(std::shared_ptr<Connection> conn,Broker::UserMap& user_to_fd_,Broker::Groups& groups_)
 {
     epoll_ctl(epfd_, EPOLL_CTL_DEL, conn->get_fd(), NULL);
     {
         std::lock_guard<std::mutex> lock(connections_mtx_);
         connections_.erase(conn->get_fd());
+        user_to_fd_.erase(conn->get_username());
+        for(auto & it : groups_){
+            it.second.erase(conn->get_fd());
+        }//unordered_map的erase方法安全，可以删不存在的键
     }
 
     conn.reset();
 }
 
-void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue, Broker::Groups& groups_)
+void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue, Broker::Groups& groups_, Broker::UserMap& user_to_fd_)
 {
     epoll_event events[64];
     while (true)
@@ -126,7 +135,7 @@ void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue, Bro
         {
             if (events[i].data.fd == static_cast<int>(listen_fd_))
             {
-                handle_accept(workers, db, replyqueue, groups_);
+                handle_accept(workers, db, replyqueue, groups_, user_to_fd_);
             }
             else
             {
@@ -134,7 +143,7 @@ void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue, Bro
                     std::lock_guard<std::mutex> lock(connections_mtx_);
                     auto it = connections_.find(events[i].data.fd);
                     if (it != connections_.end())
-                        handle_read(it->second, workers, db, replyqueue, groups_);
+                        handle_read(it->second, workers, db, replyqueue, groups_, user_to_fd_);
                 }
             }
         }
@@ -150,15 +159,6 @@ void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue, Bro
     }
 }
 
-std::unordered_map<int, std::shared_ptr<Connection>> &Reactor::get_connections()
-{
-    std::lock_guard<std::mutex> lock(connections_mtx_);
-    return connections_;
-}
-
-std::mutex& Reactor::get_connections_mutex(){
-    return connections_mtx_;//暴露内部关于connections_的资源锁，让外部也能拿到
-} 
 
 Reactor::~Reactor()
 {

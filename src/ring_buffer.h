@@ -13,6 +13,7 @@ private:
     size_t drain_ptr_ = 0;
     size_t pop_ptr_ = 0;
     char delimiter_;//分割符号
+    bool disconnected_=false;//断连标志初始为false
 public:
     explicit RingBuffer(const char);
     RingBuffer& operator=(const RingBuffer&)=delete;
@@ -22,6 +23,7 @@ public:
     std::string try_pop() ;
     bool empty() const;
     void clear();
+    bool is_disconnected()const;
     size_t available() const;
     ~RingBuffer();
 };
