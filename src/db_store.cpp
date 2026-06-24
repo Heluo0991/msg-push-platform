@@ -162,6 +162,19 @@ bool DBstore::mark_delivered(const std::string &msg_id)
     return true;
 } // 根据id标记已投递离线信息，删除对应信息
 
+bool DBstore::user_exists(const std::string &user)
+{
+    sqlite3_stmt *stmt = nullptr;
+    const char *sql = "SELECT COUNT(*) FROM users WHERE username = ?";
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK)
+        return false;
+
+    sqlite3_bind_text(stmt, 1, user.c_str(), -1, SQLITE_STATIC);
+    bool exists = (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_int(stmt, 0) > 0);
+    sqlite3_finalize(stmt);
+    return exists;
+}//查询用户是否存在
+
 DBstore::~DBstore()
 {
     int rc = sqlite3_close(db_);

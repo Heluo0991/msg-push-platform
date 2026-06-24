@@ -35,7 +35,6 @@ public:
     void run(ThreadPool&, DBstore&, MPSCQueue&, Broker::Groups&, Broker::UserMap&);
     void handle_accept(ThreadPool&, DBstore&, MPSCQueue&, Broker::Groups&, Broker::UserMap&);
     void handle_read(std::shared_ptr<Connection>, ThreadPool&, DBstore&, MPSCQueue&, Broker::Groups&, Broker::UserMap&);
-    void process_line(std::shared_ptr<Connection>, const std::string &);
     void subscribe(int);                                // 注册客户端fd到红黑树
     void close_connection(std::shared_ptr<Connection>,Broker::UserMap&,Broker::Groups&); // 从connections_中删除这个连接，从内存池取回内存
     ~Reactor(); 

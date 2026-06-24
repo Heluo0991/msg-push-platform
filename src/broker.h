@@ -39,7 +39,18 @@ namespace Broker
 
     inline void private_msg(std::shared_ptr<Connection> from, const PrivateMsg &msg,MPSCQueue & replyqueue, const std::unordered_map<int, std::shared_ptr<Connection>> &connections, DBstore& db, UserMap& user_to_fd_)
     {
-
+        if(user_to_fd_.find(msg.to)==user_to_fd_.end()){
+            json resp;
+            resp["type"]="private_failed";
+            resp["reason"]="user_not_found";
+            replyqueue.push(Reply{from->get_fd(),resp.dump()});
+            return;
+        }
+        json resp;
+        resp["type"]="private_msg";
+        resp["from"]=msg.from;
+        resp["content"]=msg.content;
+        replyqueue.push(Reply{user_to_fd_[msg.to],resp.dump()});//发给对方
     }
 
     
@@ -190,6 +201,7 @@ namespace Broker
             resp["type"] = "login_ok";
             resp["user"] = msg.username;
             replyqueue.push(Reply{from->get_fd(),resp.dump()}); // 发回一个登录成功的报文
+            user_to_fd_.insert({msg.username,from->get_fd()});//登录后加入到映射表
         }
         else
         {
