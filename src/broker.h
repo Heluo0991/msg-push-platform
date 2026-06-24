@@ -39,12 +39,20 @@ namespace Broker
 
     inline void private_msg(std::shared_ptr<Connection> from, const PrivateMsg &msg,MPSCQueue & replyqueue, const std::unordered_map<int, std::shared_ptr<Connection>> &connections, DBstore& db, UserMap& user_to_fd_)
     {
-        if(user_to_fd_.find(msg.to)==user_to_fd_.end()){
+        if(!db.user_exists(msg.to)){
             json resp;
             resp["type"]="private_failed";
             resp["reason"]="user_not_found";
             replyqueue.push(Reply{from->get_fd(),resp.dump()});
             return;
+        }
+        if(user_to_fd_.find(msg.to)==user_to_fd_.end()){
+            json offline;
+            offline["type"]="private_msg";
+            offline["from"]=msg.from;
+            offline["content"]=msg.content;
+            db.store_offline(msg.to,offline.dump());
+            return;//用户不在线，存储离线信息
         }
         json resp;
         resp["type"]="private_msg";
@@ -202,6 +210,11 @@ namespace Broker
             resp["user"] = msg.username;
             replyqueue.push(Reply{from->get_fd(),resp.dump()}); // 发回一个登录成功的报文
             user_to_fd_.insert({msg.username,from->get_fd()});//登录后加入到映射表
+            std::vector<std::pair<std::string, std::string>> offlines = db.fetch_offline(msg.username);
+            for(auto& it :offlines){
+                replyqueue.push(Reply{from->get_fd(),std::move(it.second)});
+                db.mark_delivered(it.first);
+            }//从数据库拉取离线消息并发出，然后删除数据库中已发出的离线消息(不保证send不断开，尽量发)
         }
         else
         {

@@ -139,7 +139,7 @@ std::vector<std::pair<std::string, std::string>> DBstore::fetch_offline(const st
     } // 数据库本身数据不变，到时候确认有没有发出去就行，不需要报错这里
     sqlite3_finalize(stmt);
     return msgs;
-} // 拉取全部离线信息
+} // 拉取全部离线信息，返回msg_id和字符串内容
 
 bool DBstore::mark_delivered(const std::string &msg_id)
 {
