@@ -37,7 +37,7 @@ void Reactor::subscribe(int fd)
     epoll_ctl(epfd_, EPOLL_CTL_ADD, fd, &ev);
 }
 
-void Reactor::handle_accept(ThreadPool& workers, DBstore& db, MPSCQueue& replyqueue)
+void Reactor::handle_accept(ThreadPool& workers, DBstore& db, MPSCQueue& replyqueue, Broker::Groups& groups_, Broker::UserMap& user_to_fd_)
 {
     while (true)
     {
@@ -68,11 +68,11 @@ void Reactor::handle_accept(ThreadPool& workers, DBstore& db, MPSCQueue& replyqu
         }
 
         // drain 之后立刻手动调度一次 handle_read（绕过 epoll 通知）
-        handle_read(conn, workers, db, replyqueue);
+        handle_read(conn, workers, db, replyqueue, groups_, user_to_fd_);
     }
 }
 
-void Reactor::handle_read(std::shared_ptr<Connection> conn,ThreadPool& workers,DBstore& db,MPSCQueue& replyqueue)
+void Reactor::handle_read(std::shared_ptr<Connection> conn,ThreadPool& workers,DBstore& db,MPSCQueue& replyqueue, Broker::Groups& groups_)
 {
     conn->rbuf_.drain(conn->get_fd());
     std::string recv_msg;
@@ -89,7 +89,7 @@ void Reactor::handle_read(std::shared_ptr<Connection> conn,ThreadPool& workers,D
             try_parse_line(Raw.raw_,msg_body);
             {
                 std::lock_guard<std::mutex> lock(connections_mtx_);
-                Broker::dispatch(conn_lock,msg_body,connections_,db,replyqueue);
+                Broker::dispatch(conn_lock,msg_body,connections_,db,replyqueue,groups_);
             }
         });
         conn->touch();
@@ -107,7 +107,7 @@ void Reactor::close_connection(std::shared_ptr<Connection> conn)
     conn.reset();
 }
 
-void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue)
+void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue, Broker::Groups& groups_)
 {
     epoll_event events[64];
     while (true)
@@ -126,7 +126,7 @@ void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue)
         {
             if (events[i].data.fd == static_cast<int>(listen_fd_))
             {
-                handle_accept(workers, db, replyqueue);
+                handle_accept(workers, db, replyqueue, groups_);
             }
             else
             {
@@ -134,7 +134,7 @@ void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue)
                     std::lock_guard<std::mutex> lock(connections_mtx_);
                     auto it = connections_.find(events[i].data.fd);
                     if (it != connections_.end())
-                        handle_read(it->second, workers, db, replyqueue);
+                        handle_read(it->second, workers, db, replyqueue, groups_);
                 }
             }
         }
@@ -142,11 +142,6 @@ void Reactor::run(ThreadPool & workers, DBstore & db, MPSCQueue& replyqueue)
                  // I/O 处理完了，把积压的replyqueue发出去
         Reply reply;
         while (replyqueue.pop(reply))
-        {
-            auto it = connections_.find(reply.fd_);
-            if (it != connections_.end())
-                it->second->send_line(reply.json_);
-        }
         {
             auto it = connections_.find(reply.fd_);
             if (it != connections_.end())

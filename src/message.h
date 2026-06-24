@@ -18,6 +18,7 @@ struct ChatMsg
 struct GroupMsg
 {
     std::string from;
+    std::string cmd;
     std::string group_name;
     std::string content;
 };

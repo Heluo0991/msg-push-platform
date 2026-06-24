@@ -20,7 +20,7 @@ inline void try_parse_line(const std::string &raw, MessageBody &out)//需要内�
     }
     else if (type == "group")
     {
-        out = GroupMsg{js["from"], js["group_name"], js["content"]};
+        out = GroupMsg{js["from"],js["cmd"], js["group_name"], js["content"]};
     }
     else if (type == "private")
     {

@@ -9,8 +9,10 @@ int main(int argc, char *argv[])
         workernum = std::atoi(argv[2]);
     }
 
+    Broker::Groups groups_;//生命周期为进程级的群组映射表
+    Broker::UserMap user_to_fd;//生命周期为进程级的
     MPSCQueue replyqueue;
     ThreadPool workers(workernum);
     Reactor reactor(8080);
-    reactor.run(workers, db, replyqueue);
+    reactor.run(workers, db, replyqueue, groups_);
 }
